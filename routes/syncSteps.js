@@ -4,11 +4,12 @@
  *
  * Nhận số bước từ app, lưu log vào step_logs, cộng dồn vào totalSteps.
  * Kiểm tra nếu đạt mốc nhiệm vụ thì tự động cộng Xu vào coinBalance.
+ * Sau khi cộng Xu, gửi FCM Push Notification nếu user có fcmToken.
  *
  * Body (JSON):
- *   - userId    {string}  - UID của người dùng (xác thực từ app)
- *   - steps     {number}  - Số bước chân ghi nhận được (nguyên dương, tối đa 100.000)
- *   - source    {string?} - "health_kit" | "google_fit" | "manual" (mặc định: "manual")
+ *   - userId     {string}  - UID của người dùng
+ *   - steps      {number}  - Số bước chân ghi nhận được (nguyên dương, tối đa 100.000)
+ *   - source     {string?} - "health_kit" | "google_fit" | "manual" (mặc định: "manual")
  *   - recordedAt {string?} - ISO 8601 timestamp (mặc định: server time)
  *
  * Response 200: { success, totalSteps, coinBalance, completedQuests[] }
@@ -116,9 +117,54 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // ── 5. Đọc coinBalance cuối cùng ─────────────────────────────────────────
+    // ── 5. Đọc data cuối cùng (coinBalance + fcmToken) ───────────────────────
     const finalUserSnap = await userRef.get();
-    const finalCoinBalance = finalUserSnap.data().coinBalance;
+    const finalData = finalUserSnap.data();
+    const finalCoinBalance = finalData.coinBalance;
+
+    // ── 6. Gửi FCM Push Notification nếu có quest hoàn thành ─────────────────
+    if (completedQuestTitles.length > 0) {
+      const fcmToken = finalData.fcmToken;
+
+      if (fcmToken && typeof fcmToken === "string" && fcmToken.trim() !== "") {
+        try {
+          await admin.messaging().send({
+            token: fcmToken,
+            notification: {
+              title: "🏆 Nhiệm vụ hoàn thành!",
+              body: `Ting ting! Bạn đã hoàn thành nhiệm vụ và nhận được ${totalCoinReward} Xu!`,
+            },
+            data: {
+              type: "quest_completed",
+              coinReward: String(totalCoinReward),
+              completedQuests: completedQuestTitles.join(","),
+            },
+            android: {
+              notification: {
+                channelId: "quest_notifications",
+                priority: "high",
+                sound: "default",
+              },
+            },
+            apns: {
+              payload: {
+                aps: { sound: "default", badge: 1 },
+              },
+            },
+          });
+          console.log(`[sync-steps] Đã gửi FCM tới user ${userId}`);
+        } catch (fcmError) {
+          // FCM thất bại KHÔNG làm hỏng response — chỉ log lỗi
+          if (fcmError.code === "messaging/registration-token-not-registered") {
+            console.warn(`[sync-steps] FCM token của user ${userId} hết hạn — xóa token.`);
+            // Xóa token cũ để tránh gửi lại lần sau
+            await userRef.update({ fcmToken: null }).catch(() => {});
+          } else {
+            console.error(`[sync-steps] FCM lỗi (user ${userId}):`, fcmError.message);
+          }
+        }
+      }
+    }
 
     return res.status(200).json({
       success: true,
