@@ -2,12 +2,13 @@
  * @file server.js
  * @description Entry point — QuestWalk RESTful API (Express.js)
  *
- * Setup:  Express + CORS + JSON parser
- * Routes: /api/sync-steps, /api/buy-voucher
- * Deploy: Render (process.env.PORT được Render tự inject)
+ * Cấu trúc routes:
+ *  - POST /api/register-user → Thay thế onUserCreate trigger — tạo user document
+ *  - POST /api/sync-steps    → Đồng bộ bước chân + cộng Xu nhiệm vụ
+ *  - POST /api/buy-voucher   → Mua voucher bằng Xu (Transaction nguyên tử)
  *
  * Chạy local:  npm run dev   (dùng nodemon)
- * Chạy prod:   npm start
+ * Chạy prod:   npm start     (Render inject process.env.PORT tự động)
  */
 
 require("dotenv").config();
@@ -20,6 +21,7 @@ const cors = require("cors");
 require("./firebase");
 
 // ─── Import Routes ────────────────────────────────────────────────────────────
+const registerUserRouter = require("./routes/registerUser");
 const syncStepsRouter = require("./routes/syncSteps");
 const buyVoucherRouter = require("./routes/buyVoucher");
 
@@ -52,6 +54,7 @@ app.get("/", (req, res) => {
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
+app.use("/api/register-user", registerUserRouter);
 app.use("/api/sync-steps", syncStepsRouter);
 app.use("/api/buy-voucher", buyVoucherRouter);
 

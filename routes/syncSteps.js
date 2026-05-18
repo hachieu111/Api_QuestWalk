@@ -59,6 +59,15 @@ router.post("/", async (req, res) => {
   try {
     const userRef = db.collection("users").doc(userId.trim());
 
+    // ── 0. Kiểm tra user tồn tại trước khi làm gì khác ──────────────────────
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: `Không tìm thấy user với ID: ${userId}. Hãy chắc chắn tài khoản đã được tạo.`,
+      });
+    }
+
     // ── 1. Ghi log vào step_logs ─────────────────────────────────────────────
     await db.collection("step_logs").add({
       userId: userId.trim(),
@@ -76,16 +85,9 @@ router.post("/", async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // ── 3. Đọc trạng thái user mới nhất ─────────────────────────────────────
-    const userSnap = await userRef.get();
-    if (!userSnap.exists) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: `Không tìm thấy user với ID: ${userId}`,
-      });
-    }
-
-    const userData = userSnap.data();
+    // ── 3. Đọc trạng thái user SAU KHI increment để lấy totalSteps chính xác ─
+    const userSnapAfter = await userRef.get();
+    const userData = userSnapAfter.data();
     const newTotalSteps = userData.totalSteps;
     const previousTotalSteps = newTotalSteps - steps;
 
