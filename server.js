@@ -6,6 +6,7 @@
  *  - POST /api/register-user → Thay thế onUserCreate trigger — tạo user document
  *  - POST /api/sync-steps    → Đồng bộ bước chân + cộng Xu nhiệm vụ
  *  - POST /api/buy-voucher   → Mua voucher bằng Xu (Transaction nguyên tử)
+ *  - POST /api/upload-avatar → Upload ảnh avatar lên Cloudinary
  *
  * Chạy local:  npm run dev   (dùng nodemon)
  * Chạy prod:   npm start     (Render inject process.env.PORT tự động)
@@ -15,6 +16,18 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const multer = require("multer");
+const cloudinary = require("cloudinary").v2;
+
+// ─── Cấu hình Cloudinary ──────────────────────────────────────────────────────
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// ─── Cấu hình Multer (lưu file trong RAM) ───────────────────────────────────
+const upload = multer({ storage: multer.memoryStorage() });
 
 // ─── Khởi tạo Firebase Admin SDK ─────────────────────────────────────────────
 // Import sớm để đảm bảo Firestore sẵn sàng trước khi nhận request
@@ -57,6 +70,36 @@ app.get("/", (req, res) => {
 app.use("/api/register-user", registerUserRouter);
 app.use("/api/sync-steps", syncStepsRouter);
 app.use("/api/buy-voucher", buyVoucherRouter);
+
+// ─── POST /api/upload-avatar ─────────────────────────────────────────────────
+app.post("/api/upload-avatar", upload.single("avatar"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      error: "Bad Request",
+      message: "Không có file ảnh được gửi lên (key: avatar).",
+    });
+  }
+
+  const uploadStream = cloudinary.uploader.upload_stream(
+    { folder: "questwalk_avatars" },
+    (error, result) => {
+      if (error) {
+        console.error("[POST /api/upload-avatar] Lỗi Cloudinary:", error);
+        return res.status(500).json({
+          error: "Internal Server Error",
+          message: "Đã xảy ra lỗi khi upload ảnh lên Cloudinary.",
+        });
+      }
+      return res.status(200).json({
+        success: true,
+        url: result.secure_url,
+      });
+    }
+  );
+
+  // Đẩy buffer của file từ memoryStorage vào stream của Cloudinary
+  uploadStream.end(req.file.buffer);
+});
 
 // ─── 404 Handler — Route không tồn tại ───────────────────────────────────────
 app.use((req, res) => {
